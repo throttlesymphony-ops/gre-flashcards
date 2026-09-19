@@ -3591,7 +3591,9 @@ zealot|Every committee needs one zealot; two is a schism.
                     const words = this.getWords(li);
                     const mastered = words.filter(w => SRS.isMastered(w.stats)).length;
                     const due = words.filter(w => w.stats.totalSeen > 0 && !SRS.isMastered(w.stats) && SRS.isDue(w.stats)).length;
-                    const pct = words.length ? Math.round(100 * mastered / words.length) : 0;
+                    const touched = words.filter(w => w.stats.totalSeen > 0).length;
+const pct = words.length ? Math.round(100 * ((mastered * 1.0) + (touched - mastered) * 0.5) / words.length) : 0;
+const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered} mastered` : '0 words';
                     const chip = due > 0
                         ? `<span class="text-[10px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">${due} due</span>`
                         : (mastered === words.length ? `<span class="text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full"><i class="fa-solid fa-check"></i> Complete</span>` : '');
@@ -3604,11 +3606,11 @@ zealot|Every committee needs one zealot; two is a schism.
                     card.innerHTML = `
                         <div class="flex items-center justify-between gap-2">
                             <span class="text-xs font-bold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 px-2.5 py-1 rounded-md border border-indigo-500/20">${Utils.esc(lvWrap.tag)}</span>
-                            <span class="text-[11px] text-slate-500 font-medium">${words.length} words</span>
+                            <span class="text-[11px] font-medium ${due > 0 ? 'text-amber-400' : 'text-slate-500'}">${due > 0 ? due + ' due now · ' : ''}${words.length} words</span>
                         </div>
                         <div>
                             <h3 class="text-base sm:text-lg font-extrabold text-white group-hover:text-indigo-300 transition">${Utils.esc(lvWrap.tag)} Vocabulary</h3>
-                            <p class="text-xs text-slate-400 mt-1">${mastered} / ${words.length} mastered (${pct}%)</p>
+                            <p class="text-xs text-slate-400 mt-1">${seenLabel} (${pct}%)</p>
                         </div>
                         <div role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
                             <div class="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
@@ -3723,18 +3725,24 @@ zealot|Every committee needs one zealot; two is a schism.
             }
 
             pickDistractors(correct, count = 3){
-                const used = new Set([Utils.key(correct.def.slice(0,60))]);
-                const pool = Utils.shuffle(this.allWords.filter(w => w.key !== correct.key));
-                const out = [];
-                for (const w of pool) {
-                    if (out.length >= count) break;
-                    const k = Utils.key(w.def.slice(0,60));
-                    if (used.has(k)) continue;
-                    used.add(k); out.push(w);
-                }
-                while (out.length < count) out.push({ def: 'Pertaining to a minor matter of little consequence' });
-                return out;
-            }
+    const used = new Set([Utils.key(correct.def.slice(0,60))]);
+    const sameLevel = this.getWords(this.currentLevelIndex).filter(w => w.key !== correct.key);
+    const similar = this.allWords.filter(w => w.key !== correct.key &&
+        w.word.slice(0,3).toLowerCase() === correct.word.slice(0,3).toLowerCase());
+    const pools = [similar, sameLevel, this.allWords.filter(w => w.key !== correct.key)];
+    const out = [];
+    for (const pool of pools) {
+        for (const w of Utils.shuffle(pool)) {
+            if (out.length >= count) break;
+            const k = Utils.key(w.def.slice(0,60));
+            if (used.has(k)) continue;
+            used.add(k); out.push(w);
+        }
+        if (out.length >= count) break;
+    }
+    while (out.length < count) out.push({ def: 'Pertaining to a minor matter of little consequence' });
+    return out;
+}
 
             handleQuizAnswer(idx){
                 if (this.answeredCurrent || !this.currentCard || !this.session) return;
