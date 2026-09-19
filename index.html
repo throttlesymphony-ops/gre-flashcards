@@ -3360,7 +3360,7 @@ zealot|Every committee needs one zealot; two is a schism.
 
         /* ---------------- SRS (SM-2 inspired) ---------------- */
         const SRS = {
-            MASTERY_STREAK: 3, DAY_MS: 86400000,
+            MASTERY_STREAK: 1, DAY_MS: 86400000,
             default(){ return { streak:0, totalSeen:0, correctCount:0, lapses:0, ease:2.5, intervalDays:0, due:0 }; },
             isMastered(s){ return !!s && s.streak >= this.MASTERY_STREAK; },
             isDue(s){ return !s || !s.due || s.due <= Date.now(); },
