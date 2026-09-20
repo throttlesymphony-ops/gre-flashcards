@@ -5279,7 +5279,7 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
             startSession(mode, forceAll = false){
                 this.activeQueue = this.buildQueue(this.currentLevelIndex, forceAll);
                 if (!this.activeQueue.length) { this.showAllCaughtUp(mode); return; }
-                this.session = { mode, answered:0, correct:0, newlyMastered:0, recovered:0, start:Date.now() };
+                this.session = { mode, answered:0, correct:0, newlyMastered:0, recovered:0, start:Date.now(), pool: this.getWords(this.currentLevelIndex), used: new Set() };
                 this.hideAll(); this.activeView = mode;
                 document.getElementById(mode === 'quiz' ? 'view-quiz-mode' : 'view-flashcard-mode').classList.remove('hidden');
                 if (mode === 'quiz') this.nextQuizQuestion();
@@ -5291,11 +5291,49 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 const weak = this.getWrongWords();
                 if (!weak.length) { this.toast('No weak words to practice — nice work!', 'success'); return; }
                 this.activeQueue = Utils.shuffle(weak);
-                this.session = { mode, answered:0, correct:0, newlyMastered:0, recovered:0, start:Date.now(), origin:'wrong' };
+                this.session = { mode, answered:0, correct:0, newlyMastered:0, recovered:0, start:Date.now(), origin:'wrong', pool: weak, used: new Set() };
                 this.hideAll(); this.activeView = mode;
                 document.getElementById(mode === 'quiz' ? 'view-quiz-mode' : 'view-flashcard-mode').classList.remove('hidden');
                 if (mode === 'quiz') this.nextQuizQuestion();
                 else { this.fcIndex = 0; this.renderFlashcard(); }
+            }
+
+            /* When only one or two drilling words remain, interleave confident filler
+               words so the same card is never served back-to-back. A filler answered
+               correctly is done for the session; a missed filler drops confidence,
+               enters the Wrong Words list, and repeats until it recovers. */
+            padQueueWithFillers(){
+                if (!this.session) return;
+                const MIN_QUEUE = 3;
+                if (!this.activeQueue.length || this.activeQueue.length >= MIN_QUEUE) return;
+                // Only interleave while a weak word is still being drilled; once the
+                // queue is pure finished words, let it drain so the session can end.
+                if (!this.activeQueue.some(w => SRS.needsRepeat(w.stats))) return;
+                const need = MIN_QUEUE - this.activeQueue.length;
+                // Never recycle a word already served this session, including the
+                // drilled word itself — otherwise padding loops forever.
+                const exclude = new Set([...this.activeQueue.map(w => w.key), ...(this.session.used || [])]);
+                if (this.currentCard) exclude.add(this.currentCard.key);
+                const anchor = this.currentCard || this.activeQueue[0];
+                const pools = [];
+                if (this.session.pool && this.session.pool.length) pools.push(this.session.pool);
+                if (anchor && Number.isInteger(anchor.gi)) {
+                    const lv = this.levels.find(L => anchor.gi >= L.start && anchor.gi < L.end);
+                    if (lv) pools.push(this.allWords.slice(lv.start, lv.end).map((w, i) => ({ ...w, gi: lv.start + i, stats: this.peek(w.key) })));
+                }
+                pools.push(this.allWords.map((w, i) => ({ ...w, gi: i, stats: this.peek(w.key) })));
+                const rank = w => w.stats.totalSeen ? (w.stats.confidence || 0) : -1; // confident words first, unseen last
+                const fillers = [];
+                for (const pool of pools) {
+                    const cands = Utils.shuffle(pool.filter(w => !exclude.has(w.key))).sort((a, b) => rank(b) - rank(a));
+                    for (const w of cands) {
+                        if (fillers.length >= need) break;
+                        w._filler = true;
+                        fillers.push(w); exclude.add(w.key);
+                    }
+                    if (fillers.length >= need) break;
+                }
+                fillers.forEach(w => this.activeQueue.splice(Math.floor(Math.random() * (this.activeQueue.length + 1)), 0, w));
             }
 
             /* ---------- Quiz ---------- */
@@ -5303,6 +5341,7 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 if (!this.session) return;
                 if (!this.activeQueue.length) { this.finishSession(); return; }
                 this.currentCard = this.activeQueue.shift();
+                this.session.used.add(this.currentCard.key);
                 this.answeredCurrent = false;
                 document.getElementById('quiz-feedback-box').classList.add('hidden');
                 document.getElementById('quiz-queue-remaining').textContent = `Queue: ${this.activeQueue.length + 1} left`;
@@ -5385,25 +5424,41 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 if (wasWeak && !SRS.needsRepeat(stats)) this.session.recovered++;
                 this.session.answered++;
                 let cls;
-                let requeued = false;
+                let requeued = false, requeueWhy = '';
                 if (sel.isCorrect) {
                     this.session.correct++;
                     if (!wasM && nowM) this.session.newlyMastered++;
                     cls = 'border-emerald-500 bg-emerald-500/15 text-emerald-200';
+                    if (SRS.needsRepeat(stats)) {
+                        // Missed earlier and still below Okay (3): keep drilling at a
+                        // random spot only until it recovers out of the weak zone —
+                        // the same moment it leaves the Wrong Words section.
+                        // (A filler that was missed lands here too: it repeats like
+                        // any other wrong word until its confidence recovers.)
+                        const pos = this.activeQueue.length ? 1 + Math.floor(Math.random() * this.activeQueue.length) : 0;
+                        this.activeQueue.splice(pos, 0, this.currentCard);
+                        requeued = true; requeueWhy = 'recover';
+                    } else if (this.currentCard._filler) {
+                        // Confident filler served for variety: a right answer just
+                        // tops up confidence (+1 from grading) and the word is done.
+                    } else if (!wasWeak && !this.currentCard._reinforced && (stats.confidence || 0) < SRS.CONF_MAX) {
+                        // Solid answer: exactly one reinforcement pass at a random
+                        // interval, then the word is done for this session.
+                        const pos = this.activeQueue.length ? 1 + Math.floor(Math.random() * this.activeQueue.length) : 0;
+                        this.activeQueue.splice(pos, 0, this.currentCard);
+                        this.currentCard._reinforced = true;
+                        requeued = true; requeueWhy = 'once';
+                    }
                 } else {
                     this.activeQueue.splice(Math.min(3, this.activeQueue.length), 0, this.currentCard);
                     requeued = true;
                     cls = 'border-rose-500 bg-rose-500/15 text-rose-200 shake';
                     buttons.forEach((b,i) => { if (this.currentOptions[i] && this.currentOptions[i].isCorrect) b.classList.add('border-emerald-500','bg-emerald-500/15','text-emerald-200'); });
                 }
-                // Low-confidence words repeat within the session until confidence recovers.
-                if (!requeued && SRS.needsRepeat(stats)) {
-                    this.activeQueue.splice(Math.min(5, this.activeQueue.length), 0, this.currentCard);
-                    requeued = true;
-                }
                 buttons[idx].classList.remove('border-slate-700','bg-slate-900/60','text-slate-200');
                 buttons[idx].classList.add(...cls.split(' '));
                 this.persist(); this.updateGlobalStats();
+                this.padQueueWithFillers();
 
                 const box = document.getElementById('quiz-feedback-box');
                 const title = document.getElementById('feedback-title');
@@ -5417,12 +5472,16 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                         (nowM && !wasM ? `<p class="text-[11px] mt-1 opacity-80">🎉 Mastered! Next review in ${stats.intervalDays} day(s).</p>`
                          : (nowM ? `<p class="text-[11px] mt-1 opacity-80">Next review in ${stats.intervalDays} day(s).</p>` : '')) +
                         confLine +
-                        (requeued ? `<p class="text-[11px] mt-1 text-amber-300"><i class="fa-solid fa-rotate"></i> Confidence still low — it will repeat this session.</p>` : '');
+                        (requeued
+                            ? `<p class="text-[11px] mt-1 text-amber-300"><i class="fa-solid fa-rotate"></i> ${requeueWhy === 'recover'
+                                ? 'Still building confidence — it will come back at a random point this round.'
+                                : 'It will come back once more this round at a random point.'}</p>`
+                            : '');
                 } else {
                     box.className = 'p-4 rounded-xl border bg-rose-950/40 border-rose-500/40 text-rose-200 space-y-2';
                     title.innerHTML = `<i class="fa-solid fa-circle-xmark text-rose-400 text-lg"></i><span>Not quite — re-queued for review</span>`;
                     rat.innerHTML = `<p>"<b>${Utils.esc(this.currentCard.word)}</b>": ${Utils.esc(this.currentCard.def)}.</p>` + exHTML +
-                        `<p class="text-[11px] mt-1 opacity-80">It will reappear shortly.</p>` + confLine;
+                        `<p class="text-[11px] mt-1 opacity-80">Added to Wrong Words — it will repeat until confidence recovers.</p>` + confLine;
                 }
                 box.classList.remove('hidden');
             }
