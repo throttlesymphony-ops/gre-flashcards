@@ -79,6 +79,23 @@
                 <button id="resume-btn" class="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition">Go <i class="fa-solid fa-arrow-right ml-1"></i></button>
             </div>
 
+            <div id="wrong-words-section" class="bg-slate-800/50 rounded-2xl border border-slate-700/60 shadow-xl overflow-hidden">
+                <div class="p-4 sm:p-5 flex items-center justify-between gap-3 border-b border-slate-700/60">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="bg-rose-500/15 border border-rose-500/30 p-2 rounded-lg text-rose-300"><i class="fa-solid fa-rotate-left"></i></div>
+                        <div class="min-w-0">
+                            <h3 class="font-bold text-white text-sm sm:text-base">Wrong Words — Need Repeat (<span id="wrong-words-count">0</span>)</h3>
+                            <p class="text-xs text-slate-400">Mistakes drop a word's confidence; it stays here until you rebuild it.</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-2 shrink-0">
+                        <button id="btn-wrong-flashcards" class="text-xs font-bold text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 px-3 py-2 rounded-lg transition" title="Practice wrong words as flashcards"><i class="fa-solid fa-clone mr-1"></i><span class="hidden sm:inline">Cards</span></button>
+                        <button id="btn-wrong-quiz" class="text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg transition shadow-lg" title="Quiz the wrong words"><i class="fa-solid fa-circle-question mr-1"></i><span class="hidden sm:inline">Quiz</span></button>
+                    </div>
+                </div>
+                <div id="wrong-words-list" class="max-h-80 overflow-y-auto divide-y divide-slate-700/50"></div>
+            </div>
+
             <div id="levels-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4" aria-label="Levels"></div>
         </section>
 
@@ -171,6 +188,7 @@
                     <div class="absolute inset-0 bg-gradient-to-b from-slate-800 to-slate-900 border border-indigo-500/40 rounded-2xl p-5 sm:p-8 flex flex-col justify-between backface-hidden rotate-y-180 overflow-y-auto">
                         <div class="flex justify-between items-center text-xs text-slate-400 border-b border-slate-700/60 pb-2"><span class="font-bold text-emerald-400" id="fc-back-word"></span><span class="text-slate-500">Definition</span></div>
                         <div class="space-y-3 my-auto py-3"><p id="fc-back-def" class="text-base sm:text-lg text-slate-100 font-medium leading-snug"></p><p id="fc-back-example" class="text-xs sm:text-sm text-slate-400 italic"></p></div>
+                        <div class="flex items-center justify-center gap-1.5 text-[10px] text-slate-400"><span class="uppercase tracking-widest">Confidence</span><span id="fc-back-conf" class="inline-flex items-center gap-1.5"></span></div>
                         <div class="text-center text-[10px] text-slate-500 uppercase tracking-widest">Rate your memory below</div>
                     </div>
                 </div>
@@ -4800,6 +4818,7 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
             clamp(n,min,max){ return Math.min(max,Math.max(min,n)); },
             debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; },
             fmtDuration(s){ const m=Math.floor(s/60),x=s%60; return m>0?`${m}m ${x}s`:`${x}s`; },
+            timeAgo(ts){ if (!ts) return 'just now'; const d=Math.max(0,Math.round((Date.now()-ts)/1000)); if (d<60) return 'just now'; const m=Math.round(d/60); if (m<60) return `${m}m ago`; const h=Math.round(m/60); if (h<24) return `${h}h ago`; return `${Math.round(h/24)}d ago`; },
             key(word){ return String(word).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9' -]/g,'').trim(); },
             blankify(sentence, word) {
                 try {
@@ -4813,11 +4832,11 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
             replay(el,cls='animate-q'){ if(!el) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
         };
 
-        /* ---------------- Storage v4 — keyed by WORD, not index ---------------- */
+        /* ---------------- Storage v5 — keyed by WORD, with confidence tracking ---------------- */
         const Storage = {
             KEY: 'gre_vocab_srs_v4',
             LAST_KEY: 'gre_vocab_last_v4',
-            VERSION: 4,
+            VERSION: 5,
             available(){ try { localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return true; } catch { return false; } },
             load(){
                 if (!this.available()) return {};
@@ -4825,7 +4844,8 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
                     const raw = localStorage.getItem(this.KEY);
                     if (!raw) return {};
                     const data = JSON.parse(raw);
-                    return (data && data.version === this.VERSION && data.stats && typeof data.stats === 'object') ? this.sanitize(data.stats) : {};
+                    if (data && data.stats && typeof data.stats === 'object' && (data.version === this.VERSION || data.version === 4)) return this.sanitize(data.stats);
+                    return {};
                 } catch (err) { console.error('[Storage] Load failed:', err); return {}; }
             },
             sanitize(stats){
@@ -4835,14 +4855,18 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
                     if (typeof key !== 'string' || key.length < 1 || key.length > 40) continue;
                     const s = stats[key];
                     if (!s || typeof s !== 'object') continue;
+                    const streak = this.int(s.streak,0,0,9999);
+                    const totalSeen = this.int(s.totalSeen,0,0,1e6);
                     clean[key] = {
-                        streak:       this.int(s.streak,0,0,9999),
-                        totalSeen:    this.int(s.totalSeen,0,0,1e6),
+                        streak,
+                        totalSeen,
                         correctCount: this.int(s.correctCount,0,0,1e6),
                         lapses:       this.int(s.lapses,0,0,1e6),
                         ease:         this.num(s.ease,2.5,1.3,2.8),
                         intervalDays: this.int(s.intervalDays,0,0,36500),
-                        due:          this.num(s.due,0,0,Number.MAX_SAFE_INTEGER)
+                        due:          this.num(s.due,0,0,Number.MAX_SAFE_INTEGER),
+                        confidence:   this.int(s.confidence, streak > 0 ? 3 : (totalSeen > 0 ? 1 : 0), 0, 5),
+                        lastWrong:    this.num(s.lastWrong,0,0,Number.MAX_SAFE_INTEGER)
                     };
                 }
                 return clean;
@@ -4858,26 +4882,46 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
             loadLast(){ try { const o=JSON.parse(localStorage.getItem(this.LAST_KEY)); return (o && Number.isInteger(o.d) && Number.isInteger(o.l)) ? o : null; } catch { return null; } }
         };
 
-        /* ---------------- SRS (SM-2 inspired) ---------------- */
+        /* ---------------- SRS (SM-2 inspired) + confidence ---------------- */
         const SRS = {
-            MASTERY_STREAK: 1, DAY_MS: 86400000,
-            default(){ return { streak:0, totalSeen:0, correctCount:0, lapses:0, ease:2.5, intervalDays:0, due:0 }; },
+            MASTERY_STREAK: 1, DAY_MS: 86400000, CONF_MAX: 5,
+            default(){ return { streak:0, totalSeen:0, correctCount:0, lapses:0, ease:2.5, intervalDays:0, due:0, confidence:0, lastWrong:0 }; },
             isMastered(s){ return !!s && s.streak >= this.MASTERY_STREAK; },
             isDue(s){ return !s || !s.due || s.due <= Date.now(); },
             grade(s, correct){
                 s.totalSeen++;
                 if (correct) {
                     s.streak++; s.correctCount++;
+                    s.confidence = Utils.clamp((s.confidence || 0) + 1, 0, this.CONF_MAX);
                     s.ease = Utils.clamp(s.ease + 0.10, 1.3, 2.8);
                     s.intervalDays = s.intervalDays === 0 ? 1 : s.intervalDays === 1 ? 3 : Math.min(365, Math.round(s.intervalDays * s.ease));
                     s.due = Date.now() + s.intervalDays * this.DAY_MS;
                 } else {
                     s.streak = 0; s.lapses++;
+                    // A mistake always lands the word in the repeat zone (≤2), even for
+                    // long-mastered words, until enough correct answers rebuild it.
+                    s.confidence = Utils.clamp(Math.min(2, (s.confidence || 0) - 2), 0, 2);
+                    s.lastWrong = Date.now();
                     s.ease = Utils.clamp(s.ease - 0.20, 1.3, 2.8);
                     s.intervalDays = 0; s.due = 0;
                 }
                 return s;
-            }
+            },
+            CONF_STEPS: ['Weak','Weak','Shaky','Okay','Solid','Locked in'],
+            confLabel(c){ return this.CONF_STEPS[Utils.clamp(c|0,0,5)]; },
+            confColor(c){ return c <= 1 ? 'rose' : c === 2 ? 'amber' : c === 3 ? 'sky' : 'emerald'; },
+            confDots(c){
+                const col = this.confColor(c), fill = `bg-${col}-400`;
+                let dots = '';
+                for (let i = 1; i <= this.CONF_MAX; i++) dots += `<span class="w-1.5 h-1.5 rounded-full ${i <= c ? fill : 'bg-slate-600'}"></span>`;
+                return `<span class="inline-flex items-center gap-0.5">${dots}</span>`;
+            },
+            confBadge(c){
+                const col = this.confColor(c);
+                const tones = { rose:'bg-rose-500/20 text-rose-300 border-rose-500/30', amber:'bg-amber-500/20 text-amber-300 border-amber-500/30', sky:'bg-sky-500/20 text-sky-300 border-sky-500/30', emerald:'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
+                return `<span class="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded border ${tones[col]}">${this.confDots(c)} ${this.confLabel(c)}</span>`;
+            },
+            needsRepeat(s){ return !!s && s.totalSeen > 0 && s.lapses > 0 && (s.confidence || 0) <= 2; }
         };
 
         /* ---------------- Dataset builder with audit, dedupe & sentence merge ---------------- */
@@ -4980,6 +5024,19 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
                     const btn = e.target.closest('[data-speak]');
                     if (btn) this.speak(this.allWords[Number(btn.dataset.speak)].word);
                 });
+                document.getElementById('wrong-words-list').addEventListener('click', (e) => {
+                    const speak = e.target.closest('[data-speak]');
+                    if (speak) { this.speak(this.allWords[Number(speak.dataset.speak)].word); return; }
+                    const got = e.target.closest('[data-gotit]');
+                    if (got) {
+                        const st = this.statsFor(got.dataset.gotit);
+                        st.confidence = 3;
+                        this.persist(); this.renderWrongWords();
+                        this.toast(`"${got.dataset.gotit}" marked as learned — it comes back if you miss it again.`, 'success');
+                    }
+                });
+                document.getElementById('btn-wrong-quiz').addEventListener('click', () => this.startWrongSession('quiz'));
+                document.getElementById('btn-wrong-flashcards').addEventListener('click', () => this.startWrongSession('flashcard'));
                 document.getElementById('btn-export').addEventListener('click', () => this.exportProgress());
                 document.getElementById('btn-import').addEventListener('click', () => document.getElementById('import-file').click());
                 document.getElementById('btn-reset').addEventListener('click', () => this.confirmReset());
@@ -5016,7 +5073,7 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
             hideAll(){ ['view-dashboard','view-level-detail','view-quiz-mode','view-flashcard-mode'].forEach(id => document.getElementById(id).classList.add('hidden')); }
             showDashboard(){
                 this.hideAll(); this.activeView = 'dashboard';
-                this.renderDeckTabs(); this.renderResume(); this.renderLevels();
+                this.renderDeckTabs(); this.renderResume(); this.renderLevels(); this.renderWrongWords();
                 document.getElementById('view-dashboard').classList.remove('hidden');
             }
             switchDeck(di){
@@ -5045,7 +5102,7 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
                 this.renderWordList();
                 document.getElementById('view-level-detail').classList.remove('hidden');
             }
-            exitPractice(){ this.session = null; this.showLevelDetail(this.currentLevelIndex); }
+            exitPractice(){ const origin = this.session && this.session.origin; this.session = null; if (origin === 'wrong') { this.showDashboard(); return; } this.showLevelDetail(this.currentLevelIndex); }
 
             getWords(li){
                 const lv = this.levels[li];
@@ -5099,9 +5156,10 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
                     const words = this.getWords(li);
                     const mastered = words.filter(w => SRS.isMastered(w.stats)).length;
                     const due = words.filter(w => w.stats.totalSeen > 0 && !SRS.isMastered(w.stats) && SRS.isDue(w.stats)).length;
+                    const weak = words.filter(w => SRS.needsRepeat(w.stats)).length;
                     const touched = words.filter(w => w.stats.totalSeen > 0).length;
 const pct = words.length ? Math.round(100 * ((mastered * 1.0) + (touched - mastered) * 0.5) / words.length) : 0;
-const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered} mastered` : '0 words';
+const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered} mastered${weak ? ` · ${weak} need repeat` : ''}` : '0 words';
                     const chip = due > 0
                         ? `<span class="text-[10px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">${due} due</span>`
                         : (mastered === words.length ? `<span class="text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full"><i class="fa-solid fa-check"></i> Complete</span>` : '');
@@ -5130,6 +5188,45 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 });
             }
 
+            getWrongWords(){
+                return this.allWords
+                    .map((w, gi) => ({ ...w, gi, stats: this.peek(w.key) }))
+                    .filter(w => SRS.needsRepeat(w.stats))
+                    .sort((a, b) => (b.stats.lastWrong || 0) - (a.stats.lastWrong || 0) || b.stats.lapses - a.stats.lapses);
+            }
+            renderWrongWords(){
+                const list = this.getWrongWords();
+                document.getElementById('wrong-words-count').textContent = list.length;
+                const wrap = document.getElementById('wrong-words-list');
+                if (!list.length) {
+                    wrap.innerHTML = `<div class="p-6 text-center text-sm text-slate-500"><i class="fa-solid fa-shield-heart text-emerald-500/70 text-xl block mb-2"></i>No weak words right now — any word you miss will gather here for targeted repeats.</div>`;
+                    return;
+                }
+                wrap.innerHTML = '';
+                list.forEach(w => {
+                    const s = w.stats;
+                    const tag = `${DECKS[w.deck].tag} ${w.unit + 1}`;
+                    const item = document.createElement('div');
+                    item.className = 'p-3 sm:p-4 hover:bg-slate-700/30 transition flex items-center justify-between gap-3';
+                    item.innerHTML = `
+                        <div class="min-w-0 space-y-1">
+                            <div class="flex items-center flex-wrap gap-2">
+                                <span class="font-bold text-white text-sm">${Utils.esc(w.word)}</span>
+                                ${w.pos ? `<span class="text-[10px] text-indigo-400 font-semibold bg-indigo-950 px-2 py-0.5 rounded border border-indigo-800">${Utils.esc(w.pos)}</span>` : ''}
+                                ${SRS.confBadge(s.confidence)}
+                                <span class="text-[10px] text-slate-500">${Utils.esc(tag)}</span>
+                            </div>
+                            <p class="text-xs text-slate-300 line-clamp-1">${Utils.esc(w.def)}</p>
+                            <p class="text-[10px] text-slate-500">Missed ${s.lapses}× · last ${Utils.timeAgo(s.lastWrong)}</p>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button type="button" data-speak="${w.gi}" aria-label="Pronounce ${Utils.esc(w.word)}" class="text-indigo-400 hover:text-indigo-300 p-2 rounded-full hover:bg-slate-700 transition"><i class="fa-solid fa-volume-high"></i></button>
+                            <button type="button" data-gotit="${Utils.esc(w.key)}" class="text-[11px] font-bold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-3 py-1.5 rounded-lg transition">Got it</button>
+                        </div>`;
+                    wrap.appendChild(item);
+                });
+            }
+
             renderWordList(){
                 const container = document.getElementById('word-list-container');
                 container.innerHTML = '';
@@ -5144,10 +5241,12 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 list.forEach(w => {
                     const s = w.stats;
                     let status = '';
-                    if (SRS.isMastered(s)) status = badge('Mastered','bg-emerald-500/20 text-emerald-300 border-emerald-500/30');
+                    if (SRS.needsRepeat(s)) status = badge('Needs repeat','bg-rose-500/20 text-rose-300 border-rose-500/30');
+                    else if (SRS.isMastered(s)) status = badge('Mastered','bg-emerald-500/20 text-emerald-300 border-emerald-500/30');
                     else if (s.totalSeen === 0) status = badge('New','bg-slate-600/40 text-slate-300 border-slate-500/40');
                     else if (SRS.isDue(s)) status = badge('Due now','bg-amber-500/20 text-amber-300 border-amber-500/30');
                     const leech = s.lapses >= 3 ? badge(`<i class="fa-solid fa-fire"></i> ${s.lapses}`,'bg-rose-500/20 text-rose-300 border-rose-500/30') : '';
+                    const conf = s.totalSeen ? `<span class="inline-flex items-center gap-1.5 text-[10px] text-slate-400">${SRS.confDots(s.confidence)}<span class="font-semibold">${SRS.confLabel(s.confidence)}</span></span>` : '';
                     const item = document.createElement('div');
                     item.className = 'p-4 hover:bg-slate-700/30 transition flex flex-col sm:flex-row sm:items-center justify-between gap-2';
                     item.innerHTML = `
@@ -5161,7 +5260,7 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                             ${w.ex ? `<p class="text-[11px] text-slate-500 italic">\u201C${Utils.esc(w.ex)}\u201D</p>` : ''}
                         </div>
                         <div class="flex items-center gap-3 text-[10px] text-slate-400 whitespace-nowrap">
-                            <span>Streak: <span class="text-indigo-300 font-bold">${s.streak}</span> · Seen: ${s.totalSeen}${s.lapses ? ` · Lapses: ${s.lapses}` : ''}</span>
+                            <span>Streak: <span class="text-indigo-300 font-bold">${s.streak}</span> · Seen: ${s.totalSeen}${s.lapses ? ` · Lapses: ${s.lapses}` : ''}${conf ? ' · ' : ''}${conf}</span>
                             <button type="button" data-speak="${w.gi}" aria-label="Pronounce ${Utils.esc(w.word)}" class="text-indigo-400 hover:text-indigo-300 p-2 rounded-full hover:bg-slate-700 transition"><i class="fa-solid fa-volume-high"></i></button>
                         </div>`;
                     container.appendChild(item);
@@ -5171,16 +5270,16 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
             /* ---------- Session ---------- */
             buildQueue(li, forceAll = false){
                 const words = this.getWords(li);
-                const tier = w => { const s = w.stats; if (s.totalSeen === 0) return 1; if (SRS.isMastered(s)) return 2; return 0; };
+                const tier = w => { const s = w.stats; if (SRS.needsRepeat(s)) return 0; if (s.totalSeen === 0) return 1; if (SRS.isMastered(s)) return 3; return 2; };
                 const elig = words.filter(w => forceAll || !SRS.isMastered(w.stats) || SRS.isDue(w.stats));
-                const b = [[],[],[]];
+                const b = [[],[],[],[]];
                 elig.forEach(w => b[tier(w)].push(w));
-                return [...Utils.shuffle(b[0]), ...Utils.shuffle(b[1]), ...Utils.shuffle(b[2])];
+                return [...Utils.shuffle(b[0]), ...Utils.shuffle(b[1]), ...Utils.shuffle(b[2]), ...Utils.shuffle(b[3])];
             }
             startSession(mode, forceAll = false){
                 this.activeQueue = this.buildQueue(this.currentLevelIndex, forceAll);
                 if (!this.activeQueue.length) { this.showAllCaughtUp(mode); return; }
-                this.session = { mode, answered:0, correct:0, newlyMastered:0, start:Date.now() };
+                this.session = { mode, answered:0, correct:0, newlyMastered:0, recovered:0, start:Date.now() };
                 this.hideAll(); this.activeView = mode;
                 document.getElementById(mode === 'quiz' ? 'view-quiz-mode' : 'view-flashcard-mode').classList.remove('hidden');
                 if (mode === 'quiz') this.nextQuizQuestion();
@@ -5188,6 +5287,16 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
             }
             startQuizMode(f=false){ this.startSession('quiz', f); }
             startFlashcardMode(f=false){ this.startSession('flashcard', f); }
+            startWrongSession(mode){
+                const weak = this.getWrongWords();
+                if (!weak.length) { this.toast('No weak words to practice — nice work!', 'success'); return; }
+                this.activeQueue = Utils.shuffle(weak);
+                this.session = { mode, answered:0, correct:0, newlyMastered:0, recovered:0, start:Date.now(), origin:'wrong' };
+                this.hideAll(); this.activeView = mode;
+                document.getElementById(mode === 'quiz' ? 'view-quiz-mode' : 'view-flashcard-mode').classList.remove('hidden');
+                if (mode === 'quiz') this.nextQuizQuestion();
+                else { this.fcIndex = 0; this.renderFlashcard(); }
+            }
 
             /* ---------- Quiz ---------- */
             nextQuizQuestion(){
@@ -5209,9 +5318,10 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
 
                 const badge = document.getElementById('quiz-word-mastery-badge');
                 const st = this.currentCard.stats;
-                if (SRS.isMastered(st)) { badge.textContent='Mastered'; badge.className='px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'; }
-                else if (st.streak > 0) { badge.textContent=`Streak: ${st.streak}/${SRS.MASTERY_STREAK}`; badge.className='px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'; }
-                else { badge.textContent = st.totalSeen ? 'Needs Practice' : 'New Word'; badge.className='px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30'; }
+                const dots = st.totalSeen ? ` ${SRS.confDots(st.confidence)}` : '';
+                if (SRS.isMastered(st)) { badge.innerHTML=`Mastered${dots}`; badge.className='px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'; }
+                else if (st.streak > 0) { badge.innerHTML=`Streak: ${st.streak}/${SRS.MASTERY_STREAK}${dots}`; badge.className='px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'; }
+                else { badge.innerHTML = (st.totalSeen ? 'Needs Practice' : 'New Word') + dots; badge.className='px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30'; }
 
                     const wrongs = (this.currentCard.authored && this.currentCard.authored.length === 3)
                     ? this.currentCard.authored
@@ -5268,18 +5378,28 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 const sel = this.currentOptions[idx];
                 const stats = this.statsFor(this.currentCard.key);
                 const wasM = SRS.isMastered(stats);
+                const wasWeak = SRS.needsRepeat(stats);
+                const prevC = stats.confidence || 0;
                 SRS.grade(stats, sel.isCorrect);
                 const nowM = SRS.isMastered(stats);
+                if (wasWeak && !SRS.needsRepeat(stats)) this.session.recovered++;
                 this.session.answered++;
                 let cls;
+                let requeued = false;
                 if (sel.isCorrect) {
                     this.session.correct++;
                     if (!wasM && nowM) this.session.newlyMastered++;
                     cls = 'border-emerald-500 bg-emerald-500/15 text-emerald-200';
                 } else {
                     this.activeQueue.splice(Math.min(3, this.activeQueue.length), 0, this.currentCard);
+                    requeued = true;
                     cls = 'border-rose-500 bg-rose-500/15 text-rose-200 shake';
                     buttons.forEach((b,i) => { if (this.currentOptions[i] && this.currentOptions[i].isCorrect) b.classList.add('border-emerald-500','bg-emerald-500/15','text-emerald-200'); });
+                }
+                // Low-confidence words repeat within the session until confidence recovers.
+                if (!requeued && SRS.needsRepeat(stats)) {
+                    this.activeQueue.splice(Math.min(5, this.activeQueue.length), 0, this.currentCard);
+                    requeued = true;
                 }
                 buttons[idx].classList.remove('border-slate-700','bg-slate-900/60','text-slate-200');
                 buttons[idx].classList.add(...cls.split(' '));
@@ -5288,19 +5408,21 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 const box = document.getElementById('quiz-feedback-box');
                 const title = document.getElementById('feedback-title');
                 const rat = document.getElementById('feedback-rationale');
+                const confLine = `<p class="text-[11px] mt-1 opacity-90 flex items-center gap-1.5 flex-wrap"><span class="font-bold uppercase tracking-wider">Confidence</span> ${SRS.confDots(stats.confidence)} <span class="font-semibold">${SRS.confLabel(stats.confidence)}</span><span class="opacity-70">${prevC} → ${stats.confidence}</span></p>`;
+                const exHTML = this.currentCard.ex ? `<p class="text-[11px] mt-1 opacity-80 italic">\u201C${Utils.esc(this.currentCard.ex)}\u201D</p>` : '';
                 if (sel.isCorrect) {
                     box.className = 'p-4 rounded-xl border bg-emerald-950/40 border-emerald-500/40 text-emerald-200 space-y-2';
                     title.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 text-lg"></i><span>Correct!</span>`;
-                    rat.innerHTML = `<p>"<b>${Utils.esc(this.currentCard.word)}</b>": ${Utils.esc(this.currentCard.def)}.</p>` +
-                        (this.currentCard.ex ? `<p class="text-[11px] mt-1 opacity-80 italic">\u201C${Utils.esc(this.currentCard.ex)}\u201D</p>` : '') +
+                    rat.innerHTML = `<p>"<b>${Utils.esc(this.currentCard.word)}</b>": ${Utils.esc(this.currentCard.def)}.</p>` + exHTML +
                         (nowM && !wasM ? `<p class="text-[11px] mt-1 opacity-80">🎉 Mastered! Next review in ${stats.intervalDays} day(s).</p>`
-                         : (nowM ? `<p class="text-[11px] mt-1 opacity-80">Next review in ${stats.intervalDays} day(s).</p>` : ''));
+                         : (nowM ? `<p class="text-[11px] mt-1 opacity-80">Next review in ${stats.intervalDays} day(s).</p>` : '')) +
+                        confLine +
+                        (requeued ? `<p class="text-[11px] mt-1 text-amber-300"><i class="fa-solid fa-rotate"></i> Confidence still low — it will repeat this session.</p>` : '');
                 } else {
                     box.className = 'p-4 rounded-xl border bg-rose-950/40 border-rose-500/40 text-rose-200 space-y-2';
                     title.innerHTML = `<i class="fa-solid fa-circle-xmark text-rose-400 text-lg"></i><span>Not quite — re-queued for review</span>`;
-                    rat.innerHTML = `<p>"<b>${Utils.esc(this.currentCard.word)}</b>": ${Utils.esc(this.currentCard.def)}.</p>` +
-                        (this.currentCard.ex ? `<p class="text-[11px] mt-1 opacity-80 italic">\u201C${Utils.esc(this.currentCard.ex)}\u201D</p>` : '') +
-                        `<p class="text-[11px] mt-1 opacity-80">It will reappear shortly.</p>`;
+                    rat.innerHTML = `<p>"<b>${Utils.esc(this.currentCard.word)}</b>": ${Utils.esc(this.currentCard.def)}.</p>` + exHTML +
+                        `<p class="text-[11px] mt-1 opacity-80">It will reappear shortly.</p>` + confLine;
                 }
                 box.classList.remove('hidden');
             }
@@ -5322,6 +5444,10 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 const exEl = document.getElementById('fc-back-example');
                 if (this.currentCard.ex) { exEl.textContent = '\u201C' + this.currentCard.ex + '\u201D'; exEl.classList.remove('hidden'); }
                 else { exEl.textContent = ''; exEl.classList.add('hidden'); }
+                const confEl = document.getElementById('fc-back-conf');
+                if (confEl) confEl.innerHTML = this.currentCard.stats.totalSeen
+                    ? `${SRS.confDots(this.currentCard.stats.confidence)} <span class="font-bold">${SRS.confLabel(this.currentCard.stats.confidence)}</span>`
+                    : '<span class="uppercase tracking-widest text-slate-500">New word</span>';
                 Utils.replay(document.getElementById('flashcard-shell'));
             }
             flipFlashcard(){
@@ -5333,9 +5459,12 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 if (!this.currentCard || !this.session) return;
                 const stats = this.statsFor(this.currentCard.key);
                 const wasM = SRS.isMastered(stats);
+                const wasWeak = SRS.needsRepeat(stats);
                 SRS.grade(stats, correct);
                 if (!wasM && SRS.isMastered(stats)) this.session.newlyMastered++;
-                if (!correct) this.activeQueue.push(this.currentCard);
+                if (wasWeak && !SRS.needsRepeat(stats)) this.session.recovered++;
+                // Wrong answers and still-shaky words come back later in the deck.
+                if (!correct || SRS.needsRepeat(stats)) this.activeQueue.push(this.currentCard);
                 this.session.answered++;
                 if (correct) this.session.correct++;
                 this.persist(); this.updateGlobalStats();
@@ -5347,10 +5476,10 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
             finishSession(){
                 const s = this.session; this.session = null;
                 if (!s) { this.showLevelDetail(this.currentLevelIndex); return; }
-                this.showLevelDetail(this.currentLevelIndex);
+                if (s.origin === 'wrong') this.showDashboard(); else this.showLevelDetail(this.currentLevelIndex);
                 const acc = s.answered ? Math.round(100 * s.correct / s.answered) : 0;
                 const secs = Math.max(1, Math.round((Date.now() - s.start) / 1000));
-                const leeches = this.getWords(this.currentLevelIndex).filter(w => w.stats.lapses >= 3).sort((a,b) => b.stats.lapses - a.stats.lapses).slice(0,5);
+                const leeches = s.origin === 'wrong' ? [] : this.getWords(this.currentLevelIndex).filter(w => w.stats.lapses >= 3).sort((a,b) => b.stats.lapses - a.stats.lapses).slice(0,5);
                 const leechHTML = leeches.length
                     ? `<div class="pt-1"><p class="text-xs font-bold text-rose-300 mb-1.5"><i class="fa-solid fa-fire"></i> Leech words:</p><ul class="text-xs text-slate-300 space-y-1">${leeches.map(w => `<li class="flex justify-between"><span>${Utils.esc(w.word)}</span><span class="text-rose-400">${w.stats.lapses} lapses</span></li>`).join('')}</ul></div>`
                     : `<p class="text-xs text-slate-400 pt-1"><i class="fa-solid fa-shield-heart text-emerald-400"></i> No leech words — great retention!</p>`;
@@ -5360,15 +5489,16 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                         <div class="text-center"><div class="text-4xl font-extrabold ${acc>=80?'text-emerald-400':acc>=50?'text-amber-400':'text-rose-400'}">${acc}%</div>
                         <p class="text-xs text-slate-400 mt-1 uppercase tracking-wider font-semibold">Accuracy</p></div>
                         <div class="h-2 bg-slate-700 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full" style="width:${acc}%"></div></div>
-                        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div class="grid grid-cols-4 gap-2 text-center text-xs">
                             <div class="bg-slate-900/60 rounded-lg p-2"><div class="font-bold text-white text-base">${s.answered}</div><div class="text-slate-400">Answered</div></div>
                             <div class="bg-slate-900/60 rounded-lg p-2"><div class="font-bold text-emerald-400 text-base">${s.correct}</div><div class="text-slate-400">Correct</div></div>
                             <div class="bg-slate-900/60 rounded-lg p-2"><div class="font-bold text-indigo-300 text-base">${s.newlyMastered}</div><div class="text-slate-400">Mastered</div></div>
+                            <div class="bg-slate-900/60 rounded-lg p-2"><div class="font-bold text-sky-300 text-base">${s.recovered || 0}</div><div class="text-slate-400">Recovered</div></div>
                         </div>
                         <p class="text-xs text-slate-400"><i class="fa-regular fa-clock"></i> Time: <b class="text-slate-300">${Utils.fmtDuration(secs)}</b></p>${leechHTML}`,
                     actions: [
                         { label: 'Back', variant: 'ghost' },
-                        { label: 'Practice Again', variant: 'primary', onClick: () => this.startSession(s.mode, true) }
+                        { label: 'Practice Again', variant: 'primary', onClick: () => (s.origin === 'wrong' ? this.startWrongSession(s.mode) : this.startSession(s.mode, true)) }
                     ]
                 });
             }
