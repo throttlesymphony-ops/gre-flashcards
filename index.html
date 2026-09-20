@@ -78,16 +78,7 @@
                 </div>
                 <button id="resume-btn" class="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition">Go <i class="fa-solid fa-arrow-right ml-1"></i></button>
             </div>
-  <button onclick="app.showMissed()" class="w-full text-left p-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 shadow-lg transition flex items-center justify-between gap-3 group">
-                <div class="flex items-center gap-3">
-                    <i class="fa-solid fa-fire text-rose-400 text-xl"></i>
-                    <div>
-                        <div class="font-bold text-white text-sm">Missed Words <span id="missed-badge" class="ml-1 text-[10px] font-bold bg-rose-500 text-white px-2 py-0.5 rounded-full align-middle">0</span></div>
-                        <div class="text-xs text-slate-400 mt-0.5">Your personal wrong-answer archive — quiz it, prune it yourself</div>
-                    </div>
-                </div>
-                <i class="fa-solid fa-chevron-right text-slate-500 group-hover:text-rose-300 transition"></i>
-            </button>
+
             <div id="levels-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4" aria-label="Levels"></div>
         </section>
 
@@ -189,30 +180,6 @@
                 <button type="button" onclick="app.rateFlashcard(true)" class="flex items-center justify-center gap-2 py-4 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 rounded-xl font-bold text-sm transition active:scale-[0.97]"><i class="fa-solid fa-check text-lg"></i> <span>Right</span></button>
             </div>
             <p class="text-center text-[11px] text-slate-500"><i class="fa-solid fa-hand-pointer mr-1"></i> Swipe ← wrong · → right &nbsp;·&nbsp; <span class="hidden sm:inline"><kbd class="border border-slate-700 rounded px-1.5 py-0.5">Space</kbd> flip · <kbd class="border border-slate-700 rounded px-1.5 py-0.5">1</kbd>/<kbd class="border border-slate-700 rounded px-1.5 py-0.5">2</kbd> rate · </span><span class="sm:hidden">tap card to flip</span></p>
-        </section>
-        <!-- VIEW 5: MISSED WORDS -->
-        <section id="view-missed" class="hidden max-w-3xl mx-auto space-y-5">
-            <div class="flex items-center justify-between">
-                <button onclick="app.showDashboard()" class="text-slate-400 hover:text-white text-sm font-medium flex items-center gap-2 transition py-2"><i class="fa-solid fa-arrow-left"></i> <span>Back</span></button>
-                <div class="text-sm font-semibold text-rose-400" id="missed-title">Missed Words</div>
-            </div>
-            <div class="bg-slate-800 p-5 sm:p-6 rounded-2xl border border-rose-500/30 shadow-xl space-y-4">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                        <h2 class="text-xl font-bold text-white"><i class="fa-solid fa-fire text-rose-400 mr-2"></i>Missed Words Archive</h2>
-                        <p class="text-slate-400 text-xs mt-1">Every word you got wrong lives here. Words stay until <b class="text-slate-300">you</b> remove them — even after you master them.</p>
-                    </div>
-                    <div class="flex gap-2 shrink-0">
-                        <button onclick="app.startMissedSession('quiz')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition"><i class="fa-solid fa-circle-question mr-1"></i> Quiz</button>
-                        <button onclick="app.startMissedSession('flashcard')" class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition"><i class="fa-solid fa-clone mr-1"></i> Cards</button>
-                    </div>
-                </div>
-                <div class="flex items-center justify-between text-xs">
-                    <span class="text-slate-400" id="missed-count-label">0 words</span>
-                    <button onclick="app.confirmClearMissed()" class="text-rose-400 hover:text-rose-300 font-semibold"><i class="fa-solid fa-trash mr-1"></i> Remove All</button>
-                </div>
-            </div>
-            <div id="missed-list" class="space-y-2"></div>
         </section>
     </main>
 
@@ -4852,27 +4819,14 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
             LAST_KEY: 'gre_vocab_last_v4',
             VERSION: 4,
             available(){ try { localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return true; } catch { return false; } },
-                load(){
-                if (!this.available()) return { stats: {}, missed: {} };
+            load(){
+                if (!this.available()) return {};
                 try {
                     const raw = localStorage.getItem(this.KEY);
-                    if (!raw) return { stats: {}, missed: {} };
+                    if (!raw) return {};
                     const data = JSON.parse(raw);
-                    if (!data || data.version !== this.VERSION) return { stats: {}, missed: {} };
-                    return { stats: this.sanitize(data.stats), missed: this.sanitizeMissed(data.missed) };
-                } catch (err) { console.error('[Storage] Load failed:', err); return { stats: {}, missed: {} }; }
-            },
-            sanitizeMissed(missed){
-                const clean = {};
-                if (!missed || typeof missed !== 'object') return clean;
-                for (const key of Object.keys(missed)) {
-                    if (typeof key !== 'string' || !key.length || key.length > 40) continue;
-                    const m = missed[key];
-                    if (!m || typeof m !== 'object') continue;
-                    clean[key] = { count: this.int(m.count, 1, 1, 1e6), lastAt: this.num(m.lastAt, 0, 0, Number.MAX_SAFE_INTEGER) };
-                }
-                return clean;
-            },
+                    return (data && data.version === this.VERSION && data.stats && typeof data.stats === 'object') ? this.sanitize(data.stats) : {};
+                } catch (err) { console.error('[Storage] Load failed:', err); return {}; }
             },
             sanitize(stats){
                 const clean = {};
@@ -4895,9 +4849,9 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
             },
             int(v,d,min,max){ const n=parseInt(v,10); return Number.isFinite(n)?Math.min(max,Math.max(min,n)):d; },
             num(v,d,min,max){ const n=Number(v); return Number.isFinite(n)?Math.min(max,Math.max(min,n)):d; },
-            save(stats, missed){
+            save(stats){
                 if (!this.available()) return false;
-                try { localStorage.setItem(this.KEY, JSON.stringify({ version:this.VERSION, stats, missed: missed || {}, savedAt:Date.now() })); return true; }
+                try { localStorage.setItem(this.KEY, JSON.stringify({ version:this.VERSION, stats, savedAt:Date.now() })); return true; }
                 catch (err) { console.error('[Storage] Save failed:', err); return false; }
             },
             saveLast(d,l){ try { localStorage.setItem(this.LAST_KEY, JSON.stringify({d,l})); } catch {} },
@@ -4992,10 +4946,7 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
                 this.audit = ds.audit;
                 this.totalRaw = ds.totalRaw;
                 this.totalDup = ds.totalDup;
-                const loaded = Storage.load();
-                this.userStats = loaded.stats;
-                this.missed = loaded.missed;
-                this.sessionSource = 'level';
+                this.userStats = Storage.load();
                 this.currentDeck = 0;
                 this.currentLevelIndex = 0;
                 this.activeView = 'dashboard';
@@ -5025,15 +4976,9 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
                     this.renderWordList();
                 }, 150));
 
-                    document.getElementById('missed-list').addEventListener('click', (e) => {
-                    const btn = e.target.closest('[data-act]');
-                    if (!btn) return;
-                    const k = btn.dataset.key;
-                    if (btn.dataset.act === 'remove') this.removeMissed(k);
-                    else if (btn.dataset.act === 'speak') {
-                        const w = this.allWords.find(x => x.key === k);
-                        if (w) this.speak(w.word);
-                    }
+                document.getElementById('word-list-container').addEventListener('click', (e) => {
+                    const btn = e.target.closest('[data-speak]');
+                    if (btn) this.speak(this.allWords[Number(btn.dataset.speak)].word);
                 });
                 document.getElementById('btn-export').addEventListener('click', () => this.exportProgress());
                 document.getElementById('btn-import').addEventListener('click', () => document.getElementById('import-file').click());
@@ -5064,15 +5009,11 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
 
             statsFor(key){ if (!this.userStats[key]) this.userStats[key] = SRS.default(); return this.userStats[key]; }
             peek(key){ return this.userStats[key] || SRS.default(); }
-            persist(){ if (!Storage.save(this.userStats, this.missed)) this.toast('Progress could not be saved (storage unavailable).', 'warn'); }
-            updateGlobalStats(){
-                document.getElementById('global-mastered-count').textContent = Object.values(this.userStats).filter(s => SRS.isMastered(s)).length;
-                const badge = document.getElementById('missed-badge');
-                if (badge) badge.textContent = Object.keys(this.missed).length;
-            }
+            persist(){ if (!Storage.save(this.userStats)) this.toast('Progress could not be saved (storage unavailable).', 'warn'); }
+            updateGlobalStats(){ document.getElementById('global-mastered-count').textContent = Object.values(this.userStats).filter(s => SRS.isMastered(s)).length; }
 
             /* ---------- Navigation ---------- */
-            hideAll(){ ['view-dashboard','view-level-detail','view-quiz-mode','view-flashcard-mode','view-missed'].forEach(id => document.getElementById(id).classList.add('hidden')); }
+            hideAll(){ ['view-dashboard','view-level-detail','view-quiz-mode','view-flashcard-mode'].forEach(id => document.getElementById(id).classList.add('hidden')); }
             showDashboard(){
                 this.hideAll(); this.activeView = 'dashboard';
                 this.renderDeckTabs(); this.renderResume(); this.renderLevels();
@@ -5104,82 +5045,7 @@ zealot|a lukewarm dabbler|one who couldn't care less|indifference personified
                 this.renderWordList();
                 document.getElementById('view-level-detail').classList.remove('hidden');
             }
-                       exitPractice(){
-                this.session = null;
-                if (this.sessionSource === 'missed') this.showMissed();
-                else this.showLevelDetail(this.currentLevelIndex);
-            }
-
-            /* ---------- Missed Words ---------- */
-            markMissed(card){
-                const m = this.missed[card.key] || (this.missed[card.key] = { count: 0, lastAt: 0 });
-                m.count++; m.lastAt = Date.now();
-            },
-            missedWords(){ return this.allWords.filter(w => this.missed[w.key]); },
-            showMissed(){
-                this.hideAll(); this.activeView = 'missed';
-                this.renderMissed();
-                document.getElementById('view-missed').classList.remove('hidden');
-            },
-            renderMissed(){
-                const words = this.missedWords();
-                document.getElementById('missed-count-label').textContent = `${words.length} word${words.length === 1 ? '' : 's'} stored`;
-                document.getElementById('missed-title').textContent = `Missed Words (${words.length})`;
-                const list = document.getElementById('missed-list');
-                list.innerHTML = '';
-                if (!words.length) {
-                    list.innerHTML = `<div class="bg-slate-800 border border-slate-700 rounded-2xl p-10 text-center text-sm text-slate-500"><i class="fa-solid fa-circle-check text-emerald-400 text-2xl block mb-2"></i>Clean slate — no missed words stored.</div>`;
-                    return;
-                }
-                words.sort((a, b) => (this.missed[b.key].lastAt || 0) - (this.missed[a.key].lastAt || 0));
-                const badge = (t, c) => `<span class="text-[10px] px-2 py-0.5 rounded font-bold border ${c}">${t}</span>`;
-                words.forEach(w => {
-                    const m = this.missed[w.key];
-                    const s = this.peek(w.key);
-                    const status = SRS.isMastered(s) ? badge('Mastered since', 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30')
-                                 : (s.totalSeen ? badge(`Streak ${s.streak}/${SRS.MASTERY_STREAK}`, 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30') : '');
-                    const when = m.lastAt ? new Date(m.lastAt).toLocaleDateString() : '—';
-                    const item = document.createElement('div');
-                    item.className = 'bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3';
-                    item.innerHTML = `
-                        <div class="min-w-0 space-y-1">
-                            <div class="flex items-center flex-wrap gap-2">
-                                <span class="font-bold text-white text-sm">${Utils.esc(w.word)}</span>
-                                ${w.pos ? `<span class="text-[10px] text-indigo-400 font-semibold bg-indigo-950 px-2 py-0.5 rounded border border-indigo-800">${Utils.esc(w.pos)}</span>` : ''}
-                                <span class="text-[10px] font-bold text-rose-300 bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 rounded">missed ×${m.count}</span>
-                                ${status}
-                            </div>
-                            <p class="text-xs text-slate-300">${Utils.esc(w.def)}</p>
-                            <p class="text-[10px] text-slate-500">last missed ${when} · ${Utils.esc(DECKS[w.deck].name)}</p>
-                        </div>
-                        <div class="flex items-center gap-2 shrink-0">
-                            <button type="button" data-act="speak" data-key="${Utils.esc(w.key)}" aria-label="Pronounce" class="text-indigo-400 hover:text-indigo-300 p-2 rounded-full hover:bg-slate-700 transition"><i class="fa-solid fa-volume-high"></i></button>
-                            <button type="button" data-act="remove" data-key="${Utils.esc(w.key)}" aria-label="Remove from missed list" class="text-rose-400 hover:text-rose-300 p-2 rounded-full hover:bg-rose-500/15 transition"><i class="fa-solid fa-trash"></i></button>
-                        </div>`;
-                    list.appendChild(item);
-                });
-            },
-            removeMissed(key){
-                if (this.missed[key]) { delete this.missed[key]; this.persist(); this.updateGlobalStats(); }
-                this.renderMissed();
-                this.toast('Removed from missed list.', 'success');
-            },
-            confirmClearMissed(){
-                const n = Object.keys(this.missed).length;
-                if (!n) { this.toast('Nothing to clear.', 'info'); return; }
-                this.openModal({
-                    title: 'Remove All Missed Words?',
-                    body: `<p>This clears all <b class="text-white">${n}</b> stored missed words. Your SRS streaks and mastery are untouched.</p>`,
-                    dismissible: true,
-                    actions: [
-                        { label: 'Cancel', variant: 'ghost' },
-                        { label: 'Remove All', variant: 'danger', onClick: () => {
-                            this.missed = {}; this.persist(); this.updateGlobalStats(); this.renderMissed();
-                            this.toast('Missed list cleared.', 'success');
-                        }}
-                    ]
-                });
-            },
+            exitPractice(){ this.session = null; this.showLevelDetail(this.currentLevelIndex); }
 
             getWords(li){
                 const lv = this.levels[li];
@@ -5303,34 +5169,22 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
             }
 
             /* ---------- Session ---------- */
-                       queueFromWords(words, forceAll = false){
+            buildQueue(li, forceAll = false){
+                const words = this.getWords(li);
                 const tier = w => { const s = w.stats; if (s.totalSeen === 0) return 1; if (SRS.isMastered(s)) return 2; return 0; };
                 const elig = words.filter(w => forceAll || !SRS.isMastered(w.stats) || SRS.isDue(w.stats));
                 const b = [[],[],[]];
                 elig.forEach(w => b[tier(w)].push(w));
                 return [...Utils.shuffle(b[0]), ...Utils.shuffle(b[1]), ...Utils.shuffle(b[2])];
             }
-            buildQueue(li, forceAll = false){ return this.queueFromWords(this.getWords(li), forceAll); }
-            beginSession(mode){
-                this.session = { mode, answered:0, correct:0, newlyMastered:0, start:Date.now(), words: [...this.activeQueue] };
+            startSession(mode, forceAll = false){
+                this.activeQueue = this.buildQueue(this.currentLevelIndex, forceAll);
+                if (!this.activeQueue.length) { this.showAllCaughtUp(mode); return; }
+                this.session = { mode, answered:0, correct:0, newlyMastered:0, start:Date.now() };
                 this.hideAll(); this.activeView = mode;
                 document.getElementById(mode === 'quiz' ? 'view-quiz-mode' : 'view-flashcard-mode').classList.remove('hidden');
                 if (mode === 'quiz') this.nextQuizQuestion();
                 else { this.fcIndex = 0; this.renderFlashcard(); }
-            }
-            startSession(mode, forceAll = false){
-                this.sessionSource = 'level';
-                this.activeQueue = this.buildQueue(this.currentLevelIndex, forceAll);
-                if (!this.activeQueue.length) { this.showAllCaughtUp(mode); return; }
-                this.beginSession(mode);
-            }
-            startMissedSession(mode){
-                const words = this.missedWords().map(w => ({ ...w, stats: this.peek(w.key) }));
-                if (!words.length) { this.toast('No missed words stored yet.', 'info'); return; }
-                this.sessionSource = 'missed';
-                this.activeQueue = this.queueFromWords(words, true);
-                if (!this.activeQueue.length) this.activeQueue = Utils.shuffle(words);
-                this.beginSession(mode);
             }
             startQuizMode(f=false){ this.startSession('quiz', f); }
             startFlashcardMode(f=false){ this.startSession('flashcard', f); }
@@ -5386,38 +5240,25 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 Utils.replay(document.getElementById('quiz-card'));
             }
 
-                       defTokens(def){ return new Set((String(def).toLowerCase().match(/[a-z]{4,}/g) || [])); },
-            overlap(a, b){
-                if (!a.size || !b.size) return 0;
-                let n = 0; a.forEach(t => { if (b.has(t)) n++; });
-                return n / Math.min(a.size, b.size);
-            },
             pickDistractors(correct, count = 3){
-                const correctDef = String(correct.def);
-                const used = new Set([Utils.key(correctDef.slice(0, 80))]);
-                const correctTok = this.defTokens(correctDef);
-                const sameLevel = this.getWords(this.currentLevelIndex).filter(w => w.key !== correct.key);
-                const similar = this.allWords.filter(w => w.key !== correct.key &&
-                    w.word.slice(0, 3).toLowerCase() === correct.word.slice(0, 3).toLowerCase());
-                const pools = [similar, sameLevel, this.allWords.filter(w => w.key !== correct.key)];
-                const out = [];
-                const key = (d) => Utils.key(String(d).slice(0, 80));
-                for (const pool of pools) {
-                    for (const w of Utils.shuffle(pool)) {
-                        if (out.length >= count) break;
-                        if (used.has(key(w.def))) continue;                       // exact-text duplicate
-                        const t = this.defTokens(w.def);
-                        if (this.overlap(correctTok, t) >= 0.5) continue;         // too similar to the answer
-                        if (out.some(d => this.overlap(this.defTokens(d.def), t) >= 0.6)) continue; // duplicate-ish among options
-                        used.add(key(w.def));
-                        out.push(w);
-                    }
-                    if (out.length >= count) break;
-                }
-                let f = 0;
-                while (out.length < count) out.push({ def: 'Pertaining to a minor matter of little consequence' + ' (' + (++f) + ')' });
-                return out;
-            }
+    const used = new Set([Utils.key(correct.def.slice(0,60))]);
+    const sameLevel = this.getWords(this.currentLevelIndex).filter(w => w.key !== correct.key);
+    const similar = this.allWords.filter(w => w.key !== correct.key &&
+        w.word.slice(0,3).toLowerCase() === correct.word.slice(0,3).toLowerCase());
+    const pools = [similar, sameLevel, this.allWords.filter(w => w.key !== correct.key)];
+    const out = [];
+    for (const pool of pools) {
+        for (const w of Utils.shuffle(pool)) {
+            if (out.length >= count) break;
+            const k = Utils.key(w.def.slice(0,60));
+            if (used.has(k)) continue;
+            used.add(k); out.push(w);
+        }
+        if (out.length >= count) break;
+    }
+    while (out.length < count) out.push({ def: 'Pertaining to a minor matter of little consequence' });
+    return out;
+}
 
             handleQuizAnswer(idx){
                 if (this.answeredCurrent || !this.currentCard || !this.session) return;
@@ -5437,7 +5278,6 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                     cls = 'border-emerald-500 bg-emerald-500/15 text-emerald-200';
                 } else {
                     this.activeQueue.splice(Math.min(3, this.activeQueue.length), 0, this.currentCard);
-                    this.markMissed(this.currentCard);
                     cls = 'border-rose-500 bg-rose-500/15 text-rose-200 shake';
                     buttons.forEach((b,i) => { if (this.currentOptions[i] && this.currentOptions[i].isCorrect) b.classList.add('border-emerald-500','bg-emerald-500/15','text-emerald-200'); });
                 }
@@ -5451,16 +5291,14 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 if (sel.isCorrect) {
                     box.className = 'p-4 rounded-xl border bg-emerald-950/40 border-emerald-500/40 text-emerald-200 space-y-2';
                     title.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 text-lg"></i><span>Correct!</span>`;
-                                        rat.innerHTML = `<p>"<b>${Utils.esc(this.currentCard.word)}</b>": ${Utils.esc(this.currentCard.def)}.</p>` +
-                        (this.missed[this.currentCard.key] ? `<p class="text-[11px] mt-1 opacity-80">ℹ️ This word is in your Missed List — it stays there until you remove it.</p>` : '') +
+                    rat.innerHTML = `<p>"<b>${Utils.esc(this.currentCard.word)}</b>": ${Utils.esc(this.currentCard.def)}.</p>` +
                         (this.currentCard.ex ? `<p class="text-[11px] mt-1 opacity-80 italic">\u201C${Utils.esc(this.currentCard.ex)}\u201D</p>` : '') +
                         (nowM && !wasM ? `<p class="text-[11px] mt-1 opacity-80">🎉 Mastered! Next review in ${stats.intervalDays} day(s).</p>`
                          : (nowM ? `<p class="text-[11px] mt-1 opacity-80">Next review in ${stats.intervalDays} day(s).</p>` : ''));
                 } else {
                     box.className = 'p-4 rounded-xl border bg-rose-950/40 border-rose-500/40 text-rose-200 space-y-2';
                     title.innerHTML = `<i class="fa-solid fa-circle-xmark text-rose-400 text-lg"></i><span>Not quite — re-queued for review</span>`;
-                                        rat.innerHTML = `<p>"<b>${Utils.esc(this.currentCard.word)}</b>": ${Utils.esc(this.currentCard.def)}.</p>` +
-                        (this.missed[this.currentCard.key] ? `<p class="text-[11px] mt-1 opacity-80">ℹ️ This word is in your Missed List — it stays there until you remove it.</p>` : '') +
+                    rat.innerHTML = `<p>"<b>${Utils.esc(this.currentCard.word)}</b>": ${Utils.esc(this.currentCard.def)}.</p>` +
                         (this.currentCard.ex ? `<p class="text-[11px] mt-1 opacity-80 italic">\u201C${Utils.esc(this.currentCard.ex)}\u201D</p>` : '') +
                         `<p class="text-[11px] mt-1 opacity-80">It will reappear shortly.</p>`;
                 }
@@ -5497,7 +5335,7 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 const wasM = SRS.isMastered(stats);
                 SRS.grade(stats, correct);
                 if (!wasM && SRS.isMastered(stats)) this.session.newlyMastered++;
-                if (!correct) { this.activeQueue.push(this.currentCard); this.markMissed(this.currentCard); }
+                if (!correct) this.activeQueue.push(this.currentCard);
                 this.session.answered++;
                 if (correct) this.session.correct++;
                 this.persist(); this.updateGlobalStats();
@@ -5508,11 +5346,11 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
             /* ---------- Session end ---------- */
             finishSession(){
                 const s = this.session; this.session = null;
-                                if (!s) { this.sessionSource === 'missed' ? this.showMissed() : this.showLevelDetail(this.currentLevelIndex); return; }
-                if (this.sessionSource === 'missed') this.showMissed(); else this.showLevelDetail(this.currentLevelIndex);
+                if (!s) { this.showLevelDetail(this.currentLevelIndex); return; }
+                this.showLevelDetail(this.currentLevelIndex);
                 const acc = s.answered ? Math.round(100 * s.correct / s.answered) : 0;
                 const secs = Math.max(1, Math.round((Date.now() - s.start) / 1000));
-                const leeches = (s.words || []).filter(w => w.stats.lapses >= 3).sort((a,b) => b.stats.lapses - a.stats.lapses).slice(0,5);
+                const leeches = this.getWords(this.currentLevelIndex).filter(w => w.stats.lapses >= 3).sort((a,b) => b.stats.lapses - a.stats.lapses).slice(0,5);
                 const leechHTML = leeches.length
                     ? `<div class="pt-1"><p class="text-xs font-bold text-rose-300 mb-1.5"><i class="fa-solid fa-fire"></i> Leech words:</p><ul class="text-xs text-slate-300 space-y-1">${leeches.map(w => `<li class="flex justify-between"><span>${Utils.esc(w.word)}</span><span class="text-rose-400">${w.stats.lapses} lapses</span></li>`).join('')}</ul></div>`
                     : `<p class="text-xs text-slate-400 pt-1"><i class="fa-solid fa-shield-heart text-emerald-400"></i> No leech words — great retention!</p>`;
@@ -5563,7 +5401,7 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
             }
             exportProgress(){
                 try {
-                    const payload = { app:'gre-vocab-master', schema: Storage.VERSION, exportedAt: new Date().toISOString(), words: this.userStats, missed: this.missed };
+                    const payload = { app:'gre-vocab-master', schema: Storage.VERSION, exportedAt: new Date().toISOString(), words: this.userStats };
                     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
@@ -5579,7 +5417,6 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                     try {
                         const data = JSON.parse(reader.result);
                         const incoming = Storage.sanitize(data.words !== undefined ? data.words : data);
-                        const incomingMissed = Storage.sanitizeMissed(data.missed || {});
                         const count = Object.keys(incoming).length;
                         if (!count) { this.toast('No valid word records found.', 'warn'); return; }
                         this.openModal({
@@ -5589,7 +5426,7 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                             actions: [
                                 { label: 'Cancel', variant: 'ghost' },
                                 { label: 'Import & Replace', variant: 'primary', onClick: () => {
-                                    this.userStats = incoming; this.missed = incomingMissed; this.persist(); this.updateGlobalStats();
+                                    this.userStats = incoming; this.persist(); this.updateGlobalStats();
                                     this.showDashboard(); this.toast(`Imported ${count} record(s).`, 'success');
                                 }}
                             ]
@@ -5660,7 +5497,7 @@ const seenLabel = words.length ? `${touched}/${words.length} seen · ${mastered}
                 if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
                 if (e.key === 'Escape') {
                     if (this.activeView === 'quiz' || this.activeView === 'flashcard') { e.preventDefault(); this.exitPractice(); }
-                    else if (this.activeView === 'level' || this.activeView === 'missed') { e.preventDefault(); this.showDashboard(); }
+                    else if (this.activeView === 'level') { e.preventDefault(); this.showDashboard(); }
                     return;
                 }
                 if (this.activeView === 'quiz') {
